@@ -1,0 +1,6 @@
+services:
+- type: cron
+  name: rechnungsjob
+  schedule: "0 7 * * *"
+  command: "python main.py"
+  env: python
