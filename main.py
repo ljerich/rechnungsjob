@@ -12,13 +12,13 @@ app = Flask(__name__)
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASS = os.getenv("EMAIL_PASS")
 DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
-IMAP_SERVER = "imap.alfahosting.de"
+IMAP_SERVER = "web8.alfahosting-server.de"  # aktualisierter Alfahosting-Server
 SAVE_FOLDER = "/tmp/rechnungen"
 
 
 def download_rechnungen():
     os.makedirs(SAVE_FOLDER, exist_ok=True)
-    mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+    mail = imaplib.IMAP4_SSL(IMAP_SERVER, port=993)
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
