@@ -5,11 +5,11 @@ services:
     region: frankfurt
     plan: free
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python main.py"
+    startCommand: "gunicorn -b 0.0.0.0:10000 main:app"
     envVars:
       - key: EMAIL_USER
-        fromRender: true
+        fromEnvVar: EMAIL_USER
       - key: EMAIL_PASS
-        fromRender: true
+        fromEnvVar: EMAIL_PASS
       - key: DROPBOX_TOKEN
-        fromRender: true
+        fromEnvVar: DROPBOX_TOKEN
