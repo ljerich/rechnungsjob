@@ -1,79 +1,72 @@
-# Web-Service für die Alfahosting-Mail-Verarbeitung mit Dropbox-Upload (monatlich sortiert)
+import os
 import imaplib
 import email
 from email.header import decode_header
-import os
 import datetime
 import dropbox
-from flask import Flask, jsonify
+from flask import Flask
 
 app = Flask(__name__)
 
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
-DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
-IMAP_SERVER = "web8.alfahosting-server.de"  # aktualisierter Alfahosting-Server
-SAVE_FOLDER = "/tmp/rechnungen"
+@app.route('/')
+def index():
+    return "Rechnungsverarbeitung läuft..."
 
+def save_attachment(msg, download_folder, date_filter=None):
+    for part in msg.walk():
+        if part.get_content_maintype() == 'multipart':
+            continue
+        if part.get('Content-Disposition') is None:
+            continue
 
-def download_rechnungen():
-    os.makedirs(SAVE_FOLDER, exist_ok=True)
-    mail = imaplib.IMAP4_SSL(IMAP_SERVER, port=993)
+        filename = part.get_filename()
+        if filename:
+            filepath = os.path.join(download_folder, filename)
+            with open(filepath, 'wb') as f:
+                f.write(part.get_payload(decode=True))
+            print(f"Gespeichert: {filepath}")
+            return filepath
+    return None
+
+def process_invoices():
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    DROPBOX_TOKEN = os.environ.get("DROPBOX_TOKEN")
+
+    mail = imaplib.IMAP4_SSL("web8.alfahosting-server.de", 993)
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
 
-    result, data = mail.search(None, "ALL")
+    result, data = mail.search(None, 'ALL')
     ids = data[0].split()
+    print(f"{len(ids)} E-Mails gefunden.")
 
-    files = []
-    for num in ids:
-        result, msg_data = mail.fetch(num, "(RFC822)")
-        for response in msg_data:
-            if isinstance(response, tuple):
-                msg = email.message_from_bytes(response[1])
-                subject, encoding = decode_header(msg.get("Subject"))[0]
-                if isinstance(subject, bytes):
-                    subject = subject.decode(encoding or "utf-8")
-                if "rechnung" in subject.lower():
-                    date_tuple = email.utils.parsedate_tz(msg.get("Date"))
-                    if date_tuple:
-                        dt = datetime.datetime.fromtimestamp(email.utils.mktime_tz(date_tuple))
-                        month_folder = dt.strftime("%Y-%m")
-                        for part in msg.walk():
-                            if part.get("Content-Disposition") is None:
-                                continue
-                            filename = part.get_filename()
-                            if filename and (filename.endswith(".pdf") or filename.endswith(".docx")):
-                                monthly_folder = os.path.join(SAVE_FOLDER, month_folder)
-                                os.makedirs(monthly_folder, exist_ok=True)
-                                filepath = os.path.join(monthly_folder, filename)
-                                with open(filepath, "wb") as f:
-                                    f.write(part.get_payload(decode=True))
-                                files.append((filepath, month_folder))
-    mail.logout()
-    return files
+    now = datetime.datetime.now()
+    month_folder = now.strftime("%Y-%m")
+    os.makedirs(month_folder, exist_ok=True)
 
-
-def upload_to_dropbox(filepaths):
     dbx = dropbox.Dropbox(DROPBOX_TOKEN)
-    uploaded = 0
-    for path, folder in filepaths:
-        dest = f"/Rechnungen/{folder}/{os.path.basename(path)}"
-        with open(path, "rb") as f:
-            dbx.files_upload(f.read(), dest, mode=dropbox.files.WriteMode("overwrite"))
-            uploaded += 1
-    return uploaded
 
+    for mail_id in ids:
+        result, msg_data = mail.fetch(mail_id, "(RFC822)")
+        raw_email = msg_data[0][1]
+        msg = email.message_from_bytes(raw_email)
 
-@app.route('/')
-def index():
-    try:
-        files = download_rechnungen()
-        uploaded = upload_to_dropbox(files)
-        return jsonify({"status": "ok", "rechnungen_gefunden": len(files), "hochgeladen": uploaded})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        subject, encoding = decode_header(msg["Subject"])[0]
+        if isinstance(subject, bytes):
+            subject = subject.decode(encoding if encoding else "utf-8")
 
+        if "rechnung" in subject.lower():
+            filepath = save_attachment(msg, month_folder)
+            if filepath:
+                dropbox_path = f"/{month_folder}/{os.path.basename(filepath)}"
+                with open(filepath, "rb") as f:
+                    dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+                print(f"Upload erfolgreich: {dropbox_path}")
+
+    mail.logout()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 5000)))
+    port = int(os.environ.get("PORT", 10000))
+    process_invoices()
+    app.run(host="0.0.0.0", port=port)
