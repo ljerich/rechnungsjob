@@ -14,7 +14,7 @@ EMAIL_PASS = os.getenv("EMAIL_PASS")
 DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
 
 def process_invoices():
-    mail = imaplib.IMAP4("imap.dietrichdigital.de", 993)
+    mail = imaplib.IMAP4("imap.dietrichdigital.de", 143)
     mail.login(EMAIL_USER, EMAIL_PASS)
     mail.select("inbox")
     status, messages = mail.search(None, 'UNSEEN')
